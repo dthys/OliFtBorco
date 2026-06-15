@@ -1,42 +1,32 @@
 #!/usr/bin/env python3
 """
 bol.com Order Tracker - Data Fetcher
-Runs via GitHub Actions to pull orders and save orders.json
+
+Smart sync strategy:
+  - First run : fetches everything going back 90 days (max API history).
+  - Next runs : only fetches orders newer than the last saved order.
+                New orders are MERGED into orders.json (nothing is lost).
 """
 
-import requests
-import json
-import os
-from datetime import datetime, timezone
+import requests, json, os
+from datetime import datetime, timezone, timedelta
 
-# ─── CONFIG ───────────────────────────────────────────────────────────────────
-# Replace with your bol.com Retailer API credentials
-# In GitHub Actions, set these as repository secrets:
-#   BOL_CLIENT_ID and BOL_CLIENT_SECRET
+# --- CONFIG ---
 CLIENT_ID     = os.environ.get("BOL_CLIENT_ID",     "YOUR_CLIENT_ID_HERE")
 CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
 
-# Only include order items matching these EAN codes.
-# Leave empty [] to include ALL products.
+# Only show orders containing these EAN codes. Leave [] for all products.
 TRACKED_EANS = [
-    "5430004400110",
-    "5430004400141",
-    "5430004400158",
-    "5430004400080",
+    # "8710123456789",
 ]
 
-# Output file (committed to repo, served by GitHub Pages)
 OUTPUT_FILE = "orders.json"
-# ──────────────────────────────────────────────────────────────────────────────
-
-TOKEN_URL  = "https://login.bol.com/token"
-ORDERS_URL = "https://api.bol.com/retailer/orders"
-ORDER_URL  = "https://api.bol.com/retailer/orders/{order_id}"
-ACCEPT_HDR = "application/vnd.retailer.v10+json"
+TOKEN_URL   = "https://login.bol.com/token"
+ORDERS_URL  = "https://api.bol.com/retailer/orders"
+ACCEPT_HDR  = "application/vnd.retailer.v10+json"
 
 
 def get_token():
-    """Fetch an OAuth2 access token using client credentials."""
     resp = requests.post(
         TOKEN_URL,
         data={"grant_type": "client_credentials"},
@@ -47,117 +37,130 @@ def get_token():
     return resp.json()["access_token"]
 
 
-def fetch_all_orders(token):
-    """Paginate through all orders (FBR + FBB, all statuses)."""
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": ACCEPT_HDR,
-    }
-    orders = []
-    page = 1
+def load_existing():
+    """Load saved orders. Returns (orders_dict, since_date)."""
+    if not os.path.exists(OUTPUT_FILE):
+        return {}, None
+    with open(OUTPUT_FILE, encoding="utf-8") as f:
+        data = json.load(f)
+    orders = {o["orderId"]: o for o in data.get("orders", [])}
+    if not orders:
+        return {}, None
+    # Find the most recent order date as the starting point for the next sync
+    # Subtract 1 day as a safety buffer so we never miss an order
+    latest = max(o["orderPlacedDateTime"] for o in orders.values() if o.get("orderPlacedDateTime"))
+    since = (datetime.fromisoformat(latest.replace("Z", "+00:00")) - timedelta(days=1)).strftime("%Y-%m-%d")
+    return orders, since
+
+
+def fetch_order_list(token, since_date):
+    """Paginate through all orders since since_date."""
+    print(f"   Fetching orders since {since_date}")
+    headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
+    orders, page = [], 1
     while True:
-        params = {"fulfilment-method": "ALL", "status": "ALL", "page": page}
+        params = {
+            "fulfilment-method": "ALL",
+            "status": "ALL",
+            "page": page,
+            "latest-change-date": since_date,
+        }
         resp = requests.get(ORDERS_URL, headers=headers, params=params)
-        if resp.status_code == 404:
-            break  # no more pages
+        if resp.status_code == 404: break
         resp.raise_for_status()
-        data = resp.json()
-        batch = data.get("orders", [])
-        if not batch:
-            break
+        batch = resp.json().get("orders", [])
+        if not batch: break
         orders.extend(batch)
+        print(f"   Page {page}: {len(batch)} orders")
         page += 1
     return orders
 
 
 def fetch_order_detail(token, order_id):
-    """Fetch full order detail (includes items with EAN)."""
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": ACCEPT_HDR,
-    }
-    resp = requests.get(ORDER_URL.format(order_id=order_id), headers=headers)
+    headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
+    resp = requests.get(f"{ORDERS_URL}/{order_id}", headers=headers)
     resp.raise_for_status()
     return resp.json()
 
 
-def ean_matches(order_detail):
-    """Return True if any order item matches a tracked EAN (or if no filter)."""
-    if not TRACKED_EANS:
-        return True
-    for item in order_detail.get("orderItems", []):
-        offer = item.get("offer", {})
-        if offer.get("ean") in TRACKED_EANS:
-            return True
-        product = item.get("product", {})
-        if product.get("ean") in TRACKED_EANS:
-            return True
+def ean_matches(detail):
+    if not TRACKED_EANS: return True
+    for item in detail.get("orderItems", []):
+        if item.get("offer", {}).get("ean") in TRACKED_EANS: return True
+        if item.get("product", {}).get("ean") in TRACKED_EANS: return True
     return False
 
 
 def simplify_order(detail):
-    """Extract the fields we want to display in the dashboard."""
     items = []
     for item in detail.get("orderItems", []):
-        offer   = item.get("offer", {})
-        product = item.get("product", {})
+        offer, product = item.get("offer", {}), item.get("product", {})
         items.append({
-            "orderItemId":  item.get("orderItemId"),
-            "ean":          offer.get("ean") or product.get("ean"),
-            "title":        product.get("title", ""),
-            "quantity":     item.get("quantity", 1),
-            "unitPrice":    item.get("unitPrice", 0),
-            "status":       item.get("orderItemStatus", ""),
-            "fulfilment":   item.get("fulfilment", {}).get("method", ""),
+            "orderItemId":    item.get("orderItemId"),
+            "ean":            offer.get("ean") or product.get("ean"),
+            "title":          product.get("title", ""),
+            "quantity":       item.get("quantity", 1),
+            "unitPrice":      item.get("unitPrice", 0),
+            "status":         item.get("orderItemStatus", ""),
+            "fulfilment":     item.get("fulfilment", {}).get("method", ""),
             "latestDelivery": item.get("fulfilment", {}).get("latestDeliveryDate", ""),
         })
-
-    billing = detail.get("billingDetails", {})
-    shipping = detail.get("shipmentDetails", {})
-
+    b = detail.get("billingDetails", {})
+    s = detail.get("shipmentDetails", {})
     return {
-        "orderId":       detail.get("orderId"),
+        "orderId":             detail.get("orderId"),
         "orderPlacedDateTime": detail.get("orderPlacedDateTime"),
-        "customerName":  f"{billing.get('firstName', '')} {billing.get('surname', '')}".strip()
-                          or shipping.get("firstName", "") + " " + shipping.get("surname", ""),
-        "city":          shipping.get("city", ""),
-        "countryCode":   shipping.get("countryCode", ""),
-        "items":         items,
-        "totalAmount":   sum(i["unitPrice"] * i["quantity"] for i in items),
+        "customerName":        f"{b.get(chr(70)+chr(105)+chr(114)+chr(115)+chr(116)+chr(78)+chr(97)+chr(109)+chr(101),chr(32))} {b.get(chr(115)+chr(117)+chr(114)+chr(110)+chr(97)+chr(109)+chr(101),chr(32))}".strip(),
+        "city":                s.get("city", ""),
+        "countryCode":         s.get("countryCode", ""),
+        "items":               items,
+        "totalAmount":         sum(i["unitPrice"] * i["quantity"] for i in items),
     }
 
 
 def main():
-    print("🔑 Fetching access token...")
+    print("Fetching access token...")
     token = get_token()
 
-    print("📦 Fetching order list...")
-    raw_orders = fetch_all_orders(token)
-    print(f"   Found {len(raw_orders)} orders total.")
+    # Load existing data and determine sync start date
+    existing, since = load_existing()
+    if since:
+        print(f"Incremental sync: {len(existing)} orders already saved, fetching from {since}")
+    else:
+        since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+        print(f"First run: fetching full history since {since}")
 
-    print("🔍 Fetching order details & filtering by EAN...")
-    results = []
-    for o in raw_orders:
+    raw = fetch_order_list(token, since)
+    print(f"   {len(raw)} orders returned by API")
+
+    print("Fetching order details & applying EAN filter...")
+    new_count = 0
+    for o in raw:
         oid = o.get("orderId")
         try:
             detail = fetch_order_detail(token, oid)
             if ean_matches(detail):
-                results.append(simplify_order(detail))
+                existing[oid] = simplify_order(detail)  # add or update
+                new_count += 1
         except Exception as e:
-            print(f"   ⚠️  Skipping order {oid}: {e}")
+            print(f"   Skipping {oid}: {e}")
 
-    print(f"   ✅ {len(results)} orders match the EAN filter.")
+    # Sort all orders newest first
+    all_orders = sorted(
+        existing.values(),
+        key=lambda o: o.get("orderPlacedDateTime") or "",
+        reverse=True,
+    )
 
     output = {
         "lastUpdated": datetime.now(timezone.utc).isoformat(),
         "trackedEans": TRACKED_EANS,
-        "orders": results,
+        "orders": all_orders,
     }
-
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    print(f"💾 Saved {len(results)} orders to {OUTPUT_FILE}")
+    print(f"Done: {new_count} new/updated orders fetched, {len(all_orders)} total saved.")
 
 
 if __name__ == "__main__":
