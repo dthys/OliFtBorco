@@ -19,8 +19,10 @@ CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
 # Only include order items matching these EAN codes.
 # Leave empty [] to include ALL products.
 TRACKED_EANS = [
-    # "8710123456789",
-    # "8710987654321",
+    "5430004400110",
+    "5430004400141",
+    "5430004400158",
+    "5430004400080",
 ]
 
 # Output file (committed to repo, served by GitHub Pages)
