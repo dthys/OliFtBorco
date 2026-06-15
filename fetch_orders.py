@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 CLIENT_ID     = os.environ.get("BOL_CLIENT_ID",     "YOUR_CLIENT_ID_HERE")
 CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
 
+print(f"Using Client ID: {CLIENT_ID[:6]}..." if len(CLIENT_ID) > 6 else f"Client ID: '{CLIENT_ID}'")
+
 # Only include order items matching these EAN codes.
 # Leave empty [] to include ALL products.
 TRACKED_EANS = [
