@@ -17,7 +17,10 @@ CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
 
 # Only show orders containing these EAN codes. Leave [] for all products.
 TRACKED_EANS = [
-    # "8710123456789",
+  "5430004400110",
+  "5430004400141",
+  "5430004400158",
+  "5430004400080",
 ]
 
 OUTPUT_FILE = "orders.json"
