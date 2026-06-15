@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bol.com Order Tracker</title>
+  <style>
+    :root {
+      --blue: #0000a4;
+      --blue-light: #e8e8f7;
+      --accent: #ff6600;
+      --gray: #f5f5f5;
+      --border: #ddd;
+      --text: #1a1a1a;
+      --muted: #666;
+      --green: #1a9e4b;
+      --orange: #e07b00;
+      --red: #cc2200;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f0f5; color: var(--text); min-height: 100vh; }
+
+    header {
+      background: var(--blue);
+      color: white;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+    header .logo { font-size: 26px; font-weight: 900; letter-spacing: -1px; }
+    header .logo span { color: var(--accent); }
+    header .subtitle { font-size: 13px; opacity: .8; margin-top: 2px; }
+    header .updated { margin-left: auto; font-size: 12px; opacity: .7; text-align: right; }
+
+    main { max-width: 1100px; margin: 28px auto; padding: 0 20px 40px; }
+
+    .filters {
+      background: white;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 5px; }
+    .filter-group label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .filter-group input, .filter-group select {
+      padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 14px; outline: none; transition: border-color .2s;
+      background: white;
+    }
+    .filter-group input:focus, .filter-group select:focus { border-color: var(--blue); }
+    .filter-group input[type=date] { min-width: 150px; }
+    .btn {
+      padding: 9px 20px; border-radius: 8px; border: none; cursor: pointer;
+      font-size: 14px; font-weight: 600; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--blue); color: white; }
+    .btn-ghost { background: var(--gray); color: var(--text); }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 18px 22px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    .stat-card .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 800; color: var(--blue); }
+    .stat-card .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .table-wrap {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      overflow: hidden;
+    }
+    .table-header {
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .table-header h2 { font-size: 15px; font-weight: 700; }
+    .table-header .count { font-size: 12px; color: var(--muted); }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left;
+      padding: 11px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      background: var(--gray);
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    thead th:hover { background: #e8e8e8; }
+    thead th.sorted { color: var(--blue); }
+    tbody tr { border-bottom: 1px solid #f0f0f0; transition: background .1s; }
+    tbody tr:hover { background: var(--blue-light); }
+    tbody tr:last-child { border-bottom: none; }
+    td { padding: 12px 16px; font-size: 13px; vertical-align: top; }
+    td .order-id { font-weight: 700; color: var(--blue); font-size: 12px; }
+    td .date { font-size: 12px; color: var(--muted); }
+    td .customer { font-weight: 600; }
+    td .city { font-size: 12px; color: var(--muted); }
+
+    .item-row { margin-bottom: 4px; }
+    .item-title { font-weight: 500; }
+    .item-ean { font-size: 11px; color: var(--muted); font-family: monospace; }
+    .item-qty { font-size: 12px; color: var(--muted); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-open     { background: #fff3e0; color: var(--orange); }
+    .badge-shipped  { background: #e8f5e9; color: var(--green); }
+    .badge-pending  { background: #f3e5f5; color: #7b1fa2; }
+    .badge-cancelled{ background: #ffebee; color: var(--red); }
+
+    .amount { font-weight: 700; text-align: right; }
+
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    .empty .icon { font-size: 40px; margin-bottom: 10px; }
+    .empty p { font-size: 15px; }
+
+    .error-banner {
+      background: #ffebee;
+      color: var(--red);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      font-size: 14px;
+      display: none;
+    }
+
+    @media (max-width: 700px) {
+      header { padding: 14px 16px; }
+      main { margin: 14px auto; padding: 0 10px 30px; }
+      .filters { padding: 14px; gap: 12px; }
+      td, thead th { padding: 10px 10px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">bol<span>.</span>tracker</div>
+    <div class="subtitle">Order Dashboard</div>
+  </div>
+  <div class="updated" id="last-updated"></div>
+</header>
+
+<main>
+  <div class="error-banner" id="error-banner"></div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>From date</label>
+      <input type="date" id="date-from" />
+    </div>
+    <div class="filter-group">
+      <label>To date</label>
+      <input type="date" id="date-to" />
+    </div>
+    <div class="filter-group">
+      <label>EAN filter</label>
+      <input type="text" id="ean-filter" placeholder="e.g. 8710123456789" style="min-width:200px" />
+    </div>
+    <div class="filter-group">
+      <label>Status</label>
+      <select id="status-filter">
+        <option value="">All statuses</option>
+        <option value="OPEN">Open</option>
+        <option value="SHIPPED">Shipped</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+    <div class="filter-group" style="flex-direction:row;gap:8px;">
+      <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+      <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Orders</div>
+      <div class="value" id="stat-orders">—</div>
+      <div class="sub">in selected period</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Items sold</div>
+      <div class="value" id="stat-items">—</div>
+      <div class="sub">units total</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Revenue</div>
+      <div class="value" id="stat-revenue">—</div>
+      <div class="sub">excl. returns</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Tracked EANs</div>
+      <div class="value" id="stat-eans">—</div>
+      <div class="sub" id="stat-eans-sub">configured</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h2>Orders</h2>
+      <span class="count" id="table-count"></span>
+    </div>
+    <div id="table-container"></div>
+  </div>
+</main>
+
+<script>
+  let allOrders = [];
+  let trackedEans = [];
+  let sortKey = 'orderPlacedDateTime';
+  let sortDir = -1;
+
+  // ——— Load data ———
+  async function loadData() {
+    try {
+      const resp = await fetch('orders.json?_=' + Date.now());
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      const data = await resp.json();
+
+      allOrders  = data.orders  || [];
+      trackedEans = data.trackedEans || [];
+
+      const updated = data.lastUpdated
+        ? new Date(data.lastUpdated).toLocaleString('nl-BE', { dateStyle:'short', timeStyle:'short' })
+        : 'unknown';
+      document.getElementById('last-updated').innerHTML = `Last synced<br><strong>${updated}</strong>`;
+
+      document.getElementById('stat-eans').textContent = trackedEans.length || 'All';
+      document.getElementById('stat-eans-sub').textContent = trackedEans.length
+        ? trackedEans.slice(0, 2).join(', ') + (trackedEans.length > 2 ? ' ...' : '')
+        : 'no EAN filter active';
+
+      // Default date range: last 30 days
+      const today = new Date();
+      const past  = new Date(); past.setDate(today.getDate() - 30);
+      document.getElementById('date-from').value = past.toISOString().slice(0, 10);
+      document.getElementById('date-to').value   = today.toISOString().slice(0, 10);
+
+      applyFilters();
+    } catch (e) {
+      showError(`Could not load orders.json: ${e.message}. Make sure the fetch script has run at least once.`);
+    }
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-banner');
+    el.textContent = '⚠️  ' + msg;
+    el.style.display = 'block';
+  }
+
+  // ——— Filter & render ———
+  function applyFilters() {
+    const from   = document.getElementById('date-from').value;
+    const to     = document.getElementById('date-to').value;
+    const ean    = document.getElementById('ean-filter').value.trim();
+    const status = document.getElementById('status-filter').value;
+
+    let filtered = allOrders.filter(o => {
+      const dt = o.orderPlacedDateTime ? o.orderPlacedDateTime.slice(0, 10) : '';
+      if (from && dt < from) return false;
+      if (to   && dt > to)   return false;
+      if (status) {
+        const hasStatus = o.items.some(i => i.status.toUpperCase().includes(status));
+        if (!hasStatus) return false;
+      }
+      if (ean) {
+        const hasEan = o.items.some(i => i.ean && i.ean.includes(ean));
+        if (!hasEan) return false;
+      }
+      return true;
+    });
+
+    // sort
+    filtered.sort((a, b) => {
+      let av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
+      if (sortKey === 'totalAmount') { av = +av; bv = +bv; }
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+
+    updateStats(filtered);
+    renderTable(filtered);
+  }
+
+  function resetFilters() {
+    document.getElementById('ean-filter').value = '';
+    document.getElementById('status-filter').value = '';
+    const today = new Date();
+    const past  = new Date(); past.setDate(today.getDate() - 30);
+    document.getElementById('date-from').value = past.toISOString().slice(0, 10);
+    document.getElementById('date-to').value   = today.toISOString().slice(0, 10);
+    applyFilters();
+  }
+
+  function updateStats(orders) {
+    const items   = orders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.quantity, 0), 0);
+    const revenue = orders.reduce((s, o) => s + o.totalAmount, 0);
+    document.getElementById('stat-orders').textContent  = orders.length;
+    document.getElementById('stat-items').textContent   = items;
+    document.getElementById('stat-revenue').textContent = '€' + revenue.toFixed(2);
+  }
+
+  function statusBadge(st) {
+    const s = (st || '').toUpperCase();
+    if (s.includes('OPEN'))       return `<span class="badge badge-open">Open</span>`;
+    if (s.includes('SHIP'))       return `<span class="badge badge-shipped">Shipped</span>`;
+    if (s.includes('CANCEL'))     return `<span class="badge badge-cancelled">Cancelled</span>`;
+    return `<span class="badge badge-pending">${st}</span>`;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('nl-BE', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  function setSort(key) {
+    if (sortKey === key) sortDir *= -1;
+    else { sortKey = key; sortDir = -1; }
+    applyFilters();
+    document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
+    document.querySelector(`thead th[data-key="${key}"]`)?.classList.add('sorted');
+  }
+
+  function renderTable(orders) {
+    document.getElementById('table-count').textContent = `${orders.length} order${orders.length !== 1 ? 's' : ''}`;
+    const container = document.getElementById('table-container');
+
+    if (orders.length === 0) {
+      container.innerHTML = `<div class="empty"><div class="icon">📭</div><p>No orders found for this filter.</p></div>`;
+      return;
+    }
+
+    const rows = orders.map(o => {
+      const items = o.items.map(i => `
+        <div class="item-row">
+          <span class="item-title">${escHtml(i.title || '—')}</span><br>
+          <span class="item-ean">EAN ${escHtml(i.ean || '—')}</span>
+          <span class="item-qty"> · qty ${i.quantity}</span>
+          ${statusBadge(i.status)}
+        </div>`).join('');
+
+      return `<tr>
+        <td>
+          <div class="order-id">#${escHtml(o.orderId)}</div>
+          <div class="date">${fmtDate(o.orderPlacedDateTime)}</div>
+        </td>
+        <td>
+          <div class="customer">${escHtml(o.customerName || '—')}</div>
+          <div class="city">${escHtml(o.city || '')} ${escHtml(o.countryCode || '')}</div>
+        </td>
+        <td>${items}</td>
+        <td class="amount">€${(+o.totalAmount).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th data-key="orderPlacedDateTime" onclick="setSort('orderPlacedDateTime')">Date ↕</th>
+            <th>Customer</th>
+            <th>Products</th>
+            <th data-key="totalAmount" onclick="setSort('totalAmount')" style="text-align:right">Amount ↕</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  loadData();
+  // Auto-refresh every 5 minutes
+  setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
