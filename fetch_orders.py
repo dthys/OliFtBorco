@@ -2,10 +2,10 @@
 """
 bol.com Order Tracker - Data Fetcher
 
-Smart sync strategy:
-  - First run : fetches everything going back 90 days (max API history).
-  - Next runs : only fetches orders newer than the last saved order.
-                New orders are MERGED into orders.json (nothing is lost).
+Smart sync:
+  First run  -> fetches ALL available orders (no date filter)
+  Next runs  -> fetches only orders changed since last saved order date
+               and merges them into orders.json
 """
 
 import requests, json, os
@@ -41,7 +41,7 @@ def get_token():
 
 
 def load_existing():
-    """Load saved orders. Returns (orders_dict, since_date)."""
+    """Returns (orders_dict keyed by orderId, since_date or None)."""
     if not os.path.exists(OUTPUT_FILE):
         return {}, None
     with open(OUTPUT_FILE, encoding="utf-8") as f:
@@ -49,25 +49,28 @@ def load_existing():
     orders = {o["orderId"]: o for o in data.get("orders", [])}
     if not orders:
         return {}, None
-    # Find the most recent order date as the starting point for the next sync
-    # Subtract 1 day as a safety buffer so we never miss an order
     latest = max(o["orderPlacedDateTime"] for o in orders.values() if o.get("orderPlacedDateTime"))
-    since = (datetime.fromisoformat(latest.replace("Z", "+00:00")) - timedelta(days=1)).strftime("%Y-%m-%d")
+    since  = (datetime.fromisoformat(latest.replace("Z", "+00:00")) - timedelta(days=1)).strftime("%Y-%m-%d")
     return orders, since
 
 
-def fetch_order_list(token, since_date):
-    """Paginate through all orders since since_date."""
-    print(f"   Fetching orders since {since_date}")
+def fetch_order_list(token, since_date=None):
+    """
+    Paginate through orders.
+    since_date=None  -> no date filter (first run, gets everything available)
+    since_date=str   -> adds latest-change-date filter (incremental runs)
+    """
+    if since_date:
+        print(f"   Incremental: fetching orders changed since {since_date}")
+    else:
+        print("   First run: fetching ALL available orders (no date filter)")
+
     headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
     orders, page = [], 1
     while True:
-        params = {
-            "fulfilment-method": "ALL",
-            "status": "ALL",
-            "page": page,
-            "latest-change-date": since_date,
-        }
+        params = {"fulfilment-method": "ALL", "status": "ALL", "page": page}
+        if since_date:
+            params["latest-change-date"] = since_date
         resp = requests.get(ORDERS_URL, headers=headers, params=params)
         if resp.status_code == 404: break
         resp.raise_for_status()
@@ -125,45 +128,41 @@ def main():
     print("Fetching access token...")
     token = get_token()
 
-    # Load existing data and determine sync start date
     existing, since = load_existing()
-    if since:
-        print(f"Incremental sync: {len(existing)} orders already saved, fetching from {since}")
+    if existing:
+        print(f"Incremental sync: {len(existing)} orders already saved.")
     else:
-        since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
-        print(f"First run: fetching full history since {since}")
+        print("First run: no existing data found.")
 
-    raw = fetch_order_list(token, since)
+    # First run: since=None (no date filter)
+    # Next runs: since=date string
+    raw = fetch_order_list(token, since_date=since)
     print(f"   {len(raw)} orders returned by API")
 
-    print("Fetching order details & applying EAN filter...")
+    print("Filtering by EAN and fetching details...")
     new_count = 0
     for o in raw:
         oid = o.get("orderId")
         try:
             detail = fetch_order_detail(token, oid)
             if ean_matches(detail):
-                existing[oid] = simplify_order(detail)  # add or update
+                existing[oid] = simplify_order(detail)
                 new_count += 1
         except Exception as e:
             print(f"   Skipping {oid}: {e}")
 
-    # Sort all orders newest first
-    all_orders = sorted(
-        existing.values(),
-        key=lambda o: o.get("orderPlacedDateTime") or "",
-        reverse=True,
-    )
+    all_orders = sorted(existing.values(),
+        key=lambda o: o.get("orderPlacedDateTime") or "", reverse=True)
 
     output = {
         "lastUpdated": datetime.now(timezone.utc).isoformat(),
         "trackedEans": TRACKED_EANS,
-        "orders": all_orders,
+        "orders":      all_orders,
     }
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
-    print(f"Done: {new_count} new/updated orders fetched, {len(all_orders)} total saved.")
+    print(f"Done: {new_count} new/updated, {len(all_orders)} total saved.")
 
 
 if __name__ == "__main__":
