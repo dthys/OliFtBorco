@@ -26,8 +26,8 @@ jobs:
 
       - name: Fetch orders from bol.com API
         env:
-          BOL_CLIENT_ID: $ secrets.BOL_CLIENT_ID 
-          BOL_CLIENT_SECRET: $ secrets.BOL_CLIENT_SECRET 
+          BOL_CLIENT_ID: ${{ secrets.BOL_CLIENT_ID }}
+          BOL_CLIENT_SECRET: ${{ secrets.BOL_CLIENT_SECRET }}
         run: python fetch_orders.py
 
       - name: Commit and push updated orders.json
