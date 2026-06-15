@@ -1,1 +1,71 @@
-{"lastUpdated":null,"trackedEans":[],"orders":[]}
+{
+  "lastUpdated": "2026-06-15T15:51:52.427824+00:00",
+  "trackedEans": [
+    "5430004400110",
+    "5430004400141",
+    "5430004400158",
+    "5430004400080"
+  ],
+  "orders": [
+    {
+      "orderId": "C0006RRFJ5",
+      "orderPlacedDateTime": "2026-06-15T15:47:06+02:00",
+      "customerName": "Besselse",
+      "city": "BREUKELEN",
+      "countryCode": "NL",
+      "items": [
+        {
+          "orderItemId": "BFC0001941382722",
+          "ean": "5430004400110",
+          "title": "Olivivo - Badmat - Navy - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 1,
+          "unitPrice": 19.95,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-06-16"
+        }
+      ],
+      "totalAmount": 19.95
+    },
+    {
+      "orderId": "C0006PF7R0",
+      "orderPlacedDateTime": "2026-06-14T16:01:48+02:00",
+      "customerName": "Doms",
+      "city": "Geel",
+      "countryCode": "BE",
+      "items": [
+        {
+          "orderItemId": "3940800668",
+          "ean": "5430004400158",
+          "title": "Olivivo - Badmat - Beige - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 2,
+          "unitPrice": 15.95,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-06-15"
+        }
+      ],
+      "totalAmount": 31.9
+    },
+    {
+      "orderId": "C0006N3T0H",
+      "orderPlacedDateTime": "2026-06-13T11:58:04+02:00",
+      "customerName": "Fobe",
+      "city": "Wilrijk",
+      "countryCode": "BE",
+      "items": [
+        {
+          "orderItemId": "BFC0001940212433",
+          "ean": "5430004400080",
+          "title": "Olivivo - Badmat - Lichtgrijs - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 1,
+          "unitPrice": 14.95,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-06-15"
+        }
+      ],
+      "totalAmount": 14.95
+    }
+  ]
+}
