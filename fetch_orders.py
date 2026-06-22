@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 """
-bol.com Order Tracker - Data Fetcher
-
-Smart sync:
-  First run  -> fetches ALL available orders (no date filter)
-  Next runs  -> fetches only orders changed since last saved order date
-               and merges them into orders.json
+bol.com Order Tracker
+First run  : scant 90 dagen terug in wekelijkse blokken voor volledige geschiedenis.
+Next runs  : haalt enkel nieuwe orders op en voegt ze samen in orders.json
 """
-
 import requests, json, os
 from datetime import datetime, timezone, timedelta
 
-# --- CONFIG ---
-CLIENT_ID     = os.environ.get("BOL_CLIENT_ID",     "YOUR_CLIENT_ID_HERE")
-CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
+CLIENT_ID     = os.environ.get("BOL_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "")
 
-# Only show orders containing these EAN codes. Leave [] for all products.
 TRACKED_EANS = [
-  "5430004400110",
-  "5430004400141",
-  "5430004400158",
-  "5430004400080",
+    "5430004400110",
+    "5430004400141",
+    "5430004400158",
+    "5430004400080",
 ]
 
 OUTPUT_FILE = "orders.json"
@@ -30,18 +24,15 @@ ACCEPT_HDR  = "application/vnd.retailer.v10+json"
 
 
 def get_token():
-    resp = requests.post(
-        TOKEN_URL,
+    r = requests.post(TOKEN_URL,
         data={"grant_type": "client_credentials"},
         auth=(CLIENT_ID, CLIENT_SECRET),
-        headers={"Accept": "application/json"},
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+        headers={"Accept": "application/json"})
+    r.raise_for_status()
+    return r.json()["access_token"]
 
 
 def load_existing():
-    """Returns (orders_dict keyed by orderId, since_date or None)."""
     if not os.path.exists(OUTPUT_FILE):
         return {}, None
     with open(OUTPUT_FILE, encoding="utf-8") as f:
@@ -54,46 +45,91 @@ def load_existing():
     return orders, since
 
 
-def fetch_order_list(token, since_date=None):
-    """
-    Paginate through orders.
-    since_date=None  -> no date filter (first run, gets everything available)
-    since_date=str   -> adds latest-change-date filter (incremental runs)
-    """
-    if since_date:
-        print(f"   Incremental: fetching orders changed since {since_date}")
-    else:
-        print("   First run: fetching ALL available orders (no date filter)")
+def fetch_page(headers, params):
+    r = requests.get(ORDERS_URL, headers=headers, params=params)
+    if r.status_code == 404: return []
+    r.raise_for_status()
+    return r.json().get("orders", [])
 
+
+def fetch_all_history(token, days_back=90):
+    """Scan terug in wekelijkse blokken om volledige geschiedenis op te halen."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
+    seen, all_orders = set(), []
+
+    def add_batch(batch):
+        for o in batch:
+            if o["orderId"] not in seen:
+                seen.add(o["orderId"])
+                all_orders.append(o)
+
+    # Eerst zonder datumfilter (actieve orders)
+    print("   Blok: geen datumfilter (actieve orders)")
+    page = 1
+    while True:
+        batch = fetch_page(headers, {"fulfilment-method": "ALL", "status": "ALL", "page": page})
+        if not batch: break
+        add_batch(batch)
+        page += 1
+
+    # Dan wekelijkse blokken terug in de tijd
+    today = datetime.now(timezone.utc).date()
+    for week in range(0, days_back, 7):
+        d = (today - timedelta(days=week + 7)).isoformat()
+        print(f"   Blok: latest-change-date={d}")
+        page = 1
+        while True:
+            batch = fetch_page(headers, {
+                "fulfilment-method": "ALL",
+                "status": "ALL",
+                "page": page,
+                "latest-change-date": d,
+            })
+            if not batch: break
+            add_batch(batch)
+            page += 1
+
+    print(f"   Totaal unieke orders gevonden: {len(all_orders)}")
+    return all_orders
+
+
+def fetch_incremental(token, since_date):
+    """Haal enkel orders op gewijzigd sinds since_date."""
+    print(f"   Incrementeel: orders gewijzigd sinds {since_date}")
     headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
     orders, page = [], 1
     while True:
-        params = {"fulfilment-method": "ALL", "status": "ALL", "page": page}
-        if since_date:
-            params["latest-change-date"] = since_date
-        resp = requests.get(ORDERS_URL, headers=headers, params=params)
-        if resp.status_code == 404: break
-        resp.raise_for_status()
-        batch = resp.json().get("orders", [])
+        batch = fetch_page(headers, {
+            "fulfilment-method": "ALL",
+            "status": "ALL",
+            "page": page,
+            "latest-change-date": since_date,
+        })
         if not batch: break
         orders.extend(batch)
-        print(f"   Page {page}: {len(batch)} orders")
         page += 1
     return orders
 
 
 def fetch_order_detail(token, order_id):
     headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
-    resp = requests.get(f"{ORDERS_URL}/{order_id}", headers=headers)
-    resp.raise_for_status()
-    return resp.json()
+    r = requests.get(f"{ORDERS_URL}/{order_id}", headers=headers)
+    r.raise_for_status()
+    return r.json()
 
 
 def ean_matches(detail):
     if not TRACKED_EANS: return True
     for item in detail.get("orderItems", []):
-        if item.get("offer", {}).get("ean") in TRACKED_EANS: return True
-        if item.get("product", {}).get("ean") in TRACKED_EANS: return True
+        for ean in [
+            item.get("offer", {}).get("ean"),
+            item.get("product", {}).get("ean"),
+            item.get("ean"),
+        ]:
+            if ean and str(ean) in TRACKED_EANS:
+                return True
+    found = {str(v) for item in detail.get("orderItems",[]) for v in [item.get("offer",{}).get("ean"), item.get("product",{}).get("ean"), item.get("ean")] if v}
+    print(f"   Geen EAN match voor {detail.get(chr(111)+chr(114)+chr(100)+chr(101)+chr(114)+chr(73)+chr(100))} - gevonden: {found or chr(40)+chr(110)+chr(111)+chr(110)+chr(101)+chr(41)}")
     return False
 
 
@@ -103,7 +139,7 @@ def simplify_order(detail):
         offer, product = item.get("offer", {}), item.get("product", {})
         items.append({
             "orderItemId":    item.get("orderItemId"),
-            "ean":            offer.get("ean") or product.get("ean"),
+            "ean":            offer.get("ean") or product.get("ean") or item.get("ean"),
             "title":          product.get("title", ""),
             "quantity":       item.get("quantity", 1),
             "unitPrice":      item.get("unitPrice", 0),
@@ -125,21 +161,19 @@ def simplify_order(detail):
 
 
 def main():
-    print("Fetching access token...")
+    print("Toegangstoken ophalen...")
     token = get_token()
-
     existing, since = load_existing()
-    if existing:
-        print(f"Incremental sync: {len(existing)} orders already saved.")
+
+    if since:
+        print(f"Incrementele sync: {len(existing)} orders opgeslagen, controleer vanaf {since}")
+        raw = fetch_incremental(token, since)
     else:
-        print("First run: no existing data found.")
+        print("Eerste run: 90 dagen geschiedenis ophalen in wekelijkse blokken...")
+        raw = fetch_all_history(token, days_back=90)
 
-    # First run: since=None (no date filter)
-    # Next runs: since=date string
-    raw = fetch_order_list(token, since_date=since)
-    print(f"   {len(raw)} orders returned by API")
-
-    print("Filtering by EAN and fetching details...")
+    print(f"   {len(raw)} orders te verwerken")
+    print("EAN filter toepassen en details ophalen...")
     new_count = 0
     for o in raw:
         oid = o.get("orderId")
@@ -149,21 +183,19 @@ def main():
                 existing[oid] = simplify_order(detail)
                 new_count += 1
         except Exception as e:
-            print(f"   Skipping {oid}: {e}")
+            print(f"   Overslaan {oid}: {e}")
 
     all_orders = sorted(existing.values(),
         key=lambda o: o.get("orderPlacedDateTime") or "", reverse=True)
 
-    output = {
-        "lastUpdated": datetime.now(timezone.utc).isoformat(),
-        "trackedEans": TRACKED_EANS,
-        "orders":      all_orders,
-    }
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
+        json.dump({
+            "lastUpdated": datetime.now(timezone.utc).isoformat(),
+            "trackedEans": TRACKED_EANS,
+            "orders":      all_orders,
+        }, f, indent=2, ensure_ascii=False)
 
-    print(f"Done: {new_count} new/updated, {len(all_orders)} total saved.")
-
+    print(f"Klaar: {new_count} nieuw/bijgewerkt, {len(all_orders)} totaal opgeslagen.")
 
 if __name__ == "__main__":
     main()
