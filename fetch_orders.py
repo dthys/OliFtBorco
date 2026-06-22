@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 bol.com Order Tracker
-Eerste run : haalt ALLE orders op vanaf 2020-01-01.
+Eerste run : haalt alle orders op van de laatste 90 dagen (max API limiet).
 Volgende runs : haalt enkel nieuwe orders op en voegt samen in orders.json.
 """
 import requests, json, os
@@ -16,9 +16,6 @@ TRACKED_EANS = [
     "5430004400158",
     "5430004400080",
 ]
-
-# Hoe ver terugkijken bij de eerste run
-FIRST_RUN_START_DATE = "2020-01-01"
 
 OUTPUT_FILE = "orders.json"
 TOKEN_URL   = "https://login.bol.com/token"
@@ -36,7 +33,6 @@ def get_token():
 
 
 def load_existing():
-    """Laad bestaande orders. Geeft (dict, since_date) terug."""
     if not os.path.exists(OUTPUT_FILE):
         return {}, None
     with open(OUTPUT_FILE, encoding="utf-8") as f:
@@ -49,27 +45,42 @@ def load_existing():
     return orders, since
 
 
-def fetch_order_list(token, since_date):
-    """Pagineer door alle orders vanaf since_date."""
-    print(f"   Orders ophalen vanaf {since_date}...")
-    headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
+def fetch_pages(headers, fulfilment, status, since_date=None):
+    """Pagineer door orders voor een specifieke combinatie van parameters."""
     orders, page = [], 1
     while True:
         params = {
-            "fulfilment-method": "ALL",
-            "status": "ALL",
+            "fulfilment-method": fulfilment,
+            "status": status,
             "page": page,
-            "latest-change-date": since_date,
         }
+        if since_date:
+            params["latest-change-date"] = since_date
         r = requests.get(ORDERS_URL, headers=headers, params=params)
-        if r.status_code == 404: break
+        if r.status_code in (400, 404): break
         r.raise_for_status()
         batch = r.json().get("orders", [])
         if not batch: break
         orders.extend(batch)
-        print(f"   Pagina {page}: {len(batch)} orders")
+        print(f"     [{fulfilment}/{status}] Pagina {page}: {len(batch)} orders")
         page += 1
     return orders
+
+
+def fetch_all(token, since_date=None):
+    """Haal orders op voor FBR+FBB en OPEN+SHIPPED, dedupliceert op orderId."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
+    seen, all_orders = set(), []
+
+    for fulfilment in ["FBR", "FBB"]:
+        for status in ["OPEN", "SHIPPED"]:
+            batch = fetch_pages(headers, fulfilment, status, since_date)
+            for o in batch:
+                if o["orderId"] not in seen:
+                    seen.add(o["orderId"])
+                    all_orders.append(o)
+
+    return all_orders
 
 
 def fetch_order_detail(token, order_id):
@@ -93,7 +104,7 @@ def ean_matches(detail):
         item.get("offer",{}).get("ean"),
         item.get("product",{}).get("ean"),
         item.get("ean")] if v}
-    print(f"   Geen match voor {detail.get(chr(111)+chr(114)+chr(100)+chr(101)+chr(114)+chr(73)+chr(100))} - EANs gevonden: {found or chr(40)+chr(110)+chr(111)+chr(110)+chr(101)+chr(41)}")
+    print(f"   Geen match voor {detail.get(chr(111)+chr(114)+chr(100)+chr(101)+chr(114)+chr(73)+chr(100))} - EANs: {found or chr(40)+chr(110)+chr(111)+chr(110)+chr(101)+chr(41)}")
     return False
 
 
@@ -132,11 +143,11 @@ def main():
     if since:
         print(f"Incrementele sync: {len(existing)} orders opgeslagen, controleer vanaf {since}")
     else:
-        since = FIRST_RUN_START_DATE
-        print(f"Eerste run: volledige geschiedenis ophalen vanaf {since}")
+        since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+        print(f"Eerste run: volledige geschiedenis ophalen vanaf {since} (max 90 dagen)")
 
-    raw = fetch_order_list(token, since)
-    print(f"   {len(raw)} orders opgehaald")
+    raw = fetch_all(token, since_date=since)
+    print(f"   {len(raw)} unieke orders opgehaald")
 
     print("EAN filter toepassen...")
     new_count = 0
