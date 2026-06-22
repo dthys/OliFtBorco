@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""bol.com Order Tracker"""
-import requests, json, os
-from datetime import datetime, timezone, timedelta
+"""
+bol.com Order Tracker
+Gebruikt /shipments endpoint (zoals de Streamlit app) - geeft alle verzonden orders.
+EAN zit in orderDetail["orderItems"][i]["product"]["ean"].
+"""
+import requests, json, os, time
+from datetime import datetime, timezone
 
 CLIENT_ID     = os.environ.get("BOL_CLIENT_ID", "")
 CLIENT_SECRET = os.environ.get("BOL_CLIENT_SECRET", "")
@@ -13,10 +17,10 @@ TRACKED_EANS = [
     "5430004400080",
 ]
 
-OUTPUT_FILE = "orders.json"
-TOKEN_URL   = "https://login.bol.com/token"
-ORDERS_URL  = "https://api.bol.com/retailer/orders"
-ACCEPT_HDR  = "application/vnd.retailer.v10+json"
+OUTPUT_FILE   = "orders.json"
+TOKEN_URL     = "https://login.bol.com/token"
+BASE_URL      = "https://api.bol.com/retailer"
+ACCEPT_HDR    = "application/vnd.retailer.v10+json"
 
 
 def get_token():
@@ -30,82 +34,77 @@ def get_token():
 
 def load_existing():
     if not os.path.exists(OUTPUT_FILE):
-        return {}, None
+        return {}
     with open(OUTPUT_FILE, encoding="utf-8") as f:
         data = json.load(f)
-    orders = {o["orderId"]: o for o in data.get("orders", [])}
-    if not orders:
-        return {}, None
-    latest = max(o["orderPlacedDateTime"] for o in orders.values() if o.get("orderPlacedDateTime"))
-    since  = (datetime.fromisoformat(latest.replace("Z", "+00:00")) - timedelta(days=1)).strftime("%Y-%m-%d")
-    return orders, since
+    return {o["orderId"]: o for o in data.get("orders", [])}
 
 
-def fetch_order_list(token, since_date):
-    """Haal alle orders op. EAN zit direct in orderItems[].ean."""
-    print(f"   Orders ophalen vanaf {since_date}...")
+def fetch_shipments(token, existing_order_ids):
+    """
+    Haal alle shipments op via /shipments (FBR + FBB).
+    Stopt zodra we een shipment tegenkomen waarvan de order al opgeslagen is.
+    """
     headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
-    orders, page = [], 1
-    while True:
-        r = requests.get(ORDERS_URL, headers=headers, params={
-            "fulfilment-method": "ALL",
-            "status": "ALL",
-            "latest-change-date": since_date,
-            "page": page,
-        })
-        if r.status_code == 404: break
-        r.raise_for_status()
-        batch = r.json().get("orders", [])
-        if not batch: break
-        orders.extend(batch)
-        print(f"   Pagina {page}: {len(batch)} orders")
-        page += 1
-    return orders
-
-
-def order_has_tracked_ean(order):
-    """Check EAN direct in de orders list response (geen extra API call nodig)."""
-    if not TRACKED_EANS:
-        return True
-    for item in order.get("orderItems", []):
-        if item.get("ean") in TRACKED_EANS:
-            return True
-    return False
+    all_shipments = []
+    for method in ["FBR", "FBB"]:
+        page = 1
+        stop = False
+        while not stop:
+            print(f"   [{method}] Pagina {page}...")
+            r = requests.get(f"{BASE_URL}/shipments", headers=headers,
+                params={"page": page, "fulfilment-method": method})
+            if r.status_code == 404: break
+            r.raise_for_status()
+            batch = r.json().get("shipments", [])
+            if not batch: break
+            for s in batch:
+                order_id = str(s["order"]["orderId"])
+                if order_id in existing_order_ids:
+                    stop = True
+                    break
+                all_shipments.append(s)
+            page += 1
+    return all_shipments
 
 
 def fetch_order_detail(token, order_id):
-    """Haal volledige details op (prijs, klant, adres etc.)"""
     headers = {"Authorization": f"Bearer {token}", "Accept": ACCEPT_HDR}
-    r = requests.get(f"{ORDERS_URL}/{order_id}", headers=headers)
+    r = requests.get(f"{BASE_URL}/orders/{order_id}", headers=headers)
     r.raise_for_status()
     return r.json()
 
 
-def simplify_order(order_summary, detail):
-    """Combineer list-data en detail-data tot een dashboard record."""
+def detail_has_tracked_ean(detail):
+    """EAN zit in detail["orderItems"][i]["product"]["ean"] (zoals in de Streamlit app)."""
+    if not TRACKED_EANS: return True
+    for item in detail.get("orderItems", []):
+        ean = item.get("product", {}).get("ean", "")
+        if str(ean) in TRACKED_EANS:
+            return True
+    return False
+
+
+def simplify_order(order_id, shipment, detail):
     items = []
-    for item in order_summary.get("orderItems", []):
+    for item in detail.get("orderItems", []):
+        product = item.get("product", {})
         items.append({
             "orderItemId":    item.get("orderItemId"),
-            "ean":            item.get("ean"),
+            "ean":            product.get("ean", ""),
+            "title":          product.get("title", ""),
             "quantity":       item.get("quantity", 1),
-            "status":         item.get("fulfilmentStatus", ""),
-            "fulfilment":     item.get("fulfilmentMethod", ""),
+            "unitPrice":      item.get("unitPrice", 0),
+            "status":         item.get("orderItemStatus", ""),
+            "fulfilment":     item.get("fulfilment", {}).get("method", ""),
+            "latestDelivery": item.get("fulfilment", {}).get("latestDeliveryDate", ""),
         })
-    # Voeg prijs en klantinfo toe uit detail response
-    if detail:
-        b = detail.get("billingDetails", {})
-        s = detail.get("shipmentDetails", {})
-        for i, item in enumerate(detail.get("orderItems", [])):
-            if i < len(items):
-                items[i]["title"]          = item.get("product", {}).get("title", "")
-                items[i]["unitPrice"]      = item.get("unitPrice", 0)
-                items[i]["latestDelivery"] = item.get("fulfilment", {}).get("latestDeliveryDate", "")
-    else:
-        b, s = {}, {}
+    b = detail.get("billingDetails", {})
+    s = detail.get("shipmentDetails", {})
     return {
-        "orderId":             order_summary.get("orderId"),
-        "orderPlacedDateTime": order_summary.get("orderPlacedDateTime"),
+        "orderId":             order_id,
+        "orderPlacedDateTime": detail.get("orderPlacedDateTime", ""),
+        "shipmentDateTime":    shipment.get("shipmentDateTime", ""),
         "customerName":        f"{b.get(chr(70)+chr(105)+chr(114)+chr(115)+chr(116)+chr(78)+chr(97)+chr(109)+chr(101),chr(32))} {b.get(chr(115)+chr(117)+chr(114)+chr(110)+chr(97)+chr(109)+chr(101),chr(32))}".strip(),
         "city":                s.get("city", ""),
         "countryCode":         s.get("countryCode", ""),
@@ -117,37 +116,34 @@ def simplify_order(order_summary, detail):
 def main():
     print("Toegangstoken ophalen...")
     token = get_token()
-    existing, since = load_existing()
 
-    if since:
-        print(f"Incrementele sync: {len(existing)} orders opgeslagen, controleer vanaf {since}")
-    else:
-        since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
-        print(f"Eerste run: volledige geschiedenis ophalen vanaf {since}")
+    existing = load_existing()
+    print(f"   {len(existing)} orders al opgeslagen")
 
-    raw = fetch_order_list(token, since)
-    print(f"   {len(raw)} orders opgehaald")
+    print("Shipments ophalen (stopt zodra bestaande orders gevonden worden)...")
+    shipments = fetch_shipments(token, set(existing.keys()))
+    print(f"   {len(shipments)} nieuwe shipments gevonden")
 
-    # Filter op EAN direct uit de list response (snel, geen extra API calls)
-    matched = [o for o in raw if order_has_tracked_ean(o)]
-    print(f"   {len(matched)} orders matchen de EAN filter")
-
-    # Haal details op enkel voor gematchte orders
-    print("Details ophalen voor gematchte orders...")
+    print("EAN filter + details ophalen...")
     new_count = 0
-    for o in matched:
-        oid = o.get("orderId")
+    seen_orders = set()
+    for s in shipments:
+        order_id = str(s["order"]["orderId"])
+        if order_id in seen_orders: continue
+        seen_orders.add(order_id)
         try:
-            detail = fetch_order_detail(token, oid)
-            existing[oid] = simplify_order(o, detail)
-            new_count += 1
+            time.sleep(0.05)
+            detail = fetch_order_detail(token, order_id)
+            if detail_has_tracked_ean(detail):
+                existing[order_id] = simplify_order(order_id, s, detail)
+                new_count += 1
+                print(f"   Match: {order_id}")
         except Exception as e:
-            print(f"   Fout bij {oid}: {e}")
-            existing[oid] = simplify_order(o, None)
-            new_count += 1
+            print(f"   Fout bij {order_id}: {e}")
 
     all_orders = sorted(existing.values(),
-        key=lambda o: o.get("orderPlacedDateTime") or "", reverse=True)
+        key=lambda o: o.get("shipmentDateTime") or o.get("orderPlacedDateTime") or "",
+        reverse=True)
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -156,7 +152,7 @@ def main():
             "orders":      all_orders,
         }, f, indent=2, ensure_ascii=False)
 
-    print(f"Klaar: {new_count} nieuw/bijgewerkt, {len(all_orders)} totaal opgeslagen.")
+    print(f"Klaar: {new_count} nieuw opgeslagen, {len(all_orders)} totaal.")
 
 if __name__ == "__main__":
     main()
