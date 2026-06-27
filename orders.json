@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-06-27T15:58:05.963689+00:00",
+  "lastUpdated": "2026-06-27T17:05:11.649895+00:00",
   "trackedEans": [
     "5430004400110",
     "5430004400141",
@@ -7,6 +7,27 @@
     "5430004400080"
   ],
   "orders": [
+    {
+      "orderId": "C0007JLNWF",
+      "orderPlacedDateTime": "2026-06-27T16:31:16+02:00",
+      "shipmentDateTime": "2026-06-27T18:56:50+02:00",
+      "customerName": "De Smedt",
+      "city": "MECHELEN",
+      "countryCode": "BE",
+      "items": [
+        {
+          "orderItemId": "BFC0001948646632",
+          "ean": "5430004400158",
+          "title": "Olivivo - Badmat - Beige - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 1,
+          "unitPrice": 19.95,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-06-29"
+        }
+      ],
+      "totalAmount": 19.95
+    },
     {
       "orderId": "C0007FJ57T",
       "orderPlacedDateTime": "2026-06-25T20:41:11+02:00",
