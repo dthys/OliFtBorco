@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-07-08T12:12:15.995918+00:00",
+  "lastUpdated": "2026-07-08T15:07:15.463377+00:00",
   "trackedEans": [
     "5430004400110",
     "5430004400141",
@@ -7,6 +7,27 @@
     "5430004400080"
   ],
   "orders": [
+    {
+      "orderId": "C00091H0MR",
+      "orderPlacedDateTime": "2026-07-07T18:32:43+02:00",
+      "shipmentDateTime": "2026-07-08T15:22:22+02:00",
+      "customerName": "Struyf",
+      "city": "MERELBEKE-MELLE",
+      "countryCode": "BE",
+      "items": [
+        {
+          "orderItemId": "BFC0001954703782",
+          "ean": "5430004400080",
+          "title": "Olivivo Badmat Antislip Lichtgrijs - Badkamermat 50x80cm - Wasbaar - Zachte Douchemat met TPR Onderkant - Toiletmat",
+          "quantity": 1,
+          "unitPrice": 15.95,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-07-09"
+        }
+      ],
+      "totalAmount": 15.95
+    },
     {
       "orderId": "C0008X8DX6",
       "orderPlacedDateTime": "2026-07-06T10:52:08+02:00",
