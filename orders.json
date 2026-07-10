@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-07-10T22:48:11.306245+00:00",
+  "lastUpdated": "2026-07-10T23:45:35.667532+00:00",
   "trackedEans": [
     "5430004400110",
     "5430004400141",
@@ -7,6 +7,27 @@
     "5430004400080"
   ],
   "orders": [
+    {
+      "orderId": "C00095CH24",
+      "orderPlacedDateTime": "2026-07-10T14:11:20+02:00",
+      "shipmentDateTime": "2026-07-11T01:05:05+02:00",
+      "customerName": "Elenbaas-V.D.Braak",
+      "city": "BAARLO LB",
+      "countryCode": "NL",
+      "items": [
+        {
+          "orderItemId": "3956374167",
+          "ean": "5430004400158",
+          "title": "Olivivo - Badmat - Beige - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 2,
+          "unitPrice": 22.5,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-07-11"
+        }
+      ],
+      "totalAmount": 45.0
+    },
     {
       "orderId": "C00095HM2L",
       "orderPlacedDateTime": "2026-07-10T15:52:52+02:00",
