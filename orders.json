@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-07-11T17:44:29.243725+00:00",
+  "lastUpdated": "2026-07-11T18:41:52.095423+00:00",
   "trackedEans": [
     "5430004400110",
     "5430004400141",
@@ -7,6 +7,27 @@
     "5430004400080"
   ],
   "orders": [
+    {
+      "orderId": "C000965KFC",
+      "orderPlacedDateTime": "2026-07-11T09:56:02+02:00",
+      "shipmentDateTime": "2026-07-11T20:03:40+02:00",
+      "customerName": "Dijkhuizen",
+      "city": "'S-GRAVENHAGE",
+      "countryCode": "NL",
+      "items": [
+        {
+          "orderItemId": "BFC0001956719042",
+          "ean": "5430004400110",
+          "title": "Olivivo - Badmat - Navy - 50x80cm - Wasbaar - Antislip - Douche Mat - WC Mat - Badkamer Mat - Badmat Antislip - Badkamer Accessoires - Douchemat - Badmatten",
+          "quantity": 1,
+          "unitPrice": 25.0,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-07-13"
+        }
+      ],
+      "totalAmount": 25.0
+    },
     {
       "orderId": "C00095CH24",
       "orderPlacedDateTime": "2026-07-10T14:11:20+02:00",
