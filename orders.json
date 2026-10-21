@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-10-21T10:45:51.322191+00:00",
+  "lastUpdated": "2026-10-21T15:43:57.885945+00:00",
   "trackedEans": [
     "5430004400110",
     "5430004400141",
@@ -7,6 +7,27 @@
     "5430004400080"
   ],
   "orders": [
+    {
+      "orderId": "C000HJC5D7",
+      "orderPlacedDateTime": "2026-10-21T09:58:43+02:00",
+      "shipmentDateTime": "2026-10-21T15:24:02+02:00",
+      "customerName": "van de Weerd",
+      "city": "AMSTERDAM",
+      "countryCode": "NL",
+      "items": [
+        {
+          "orderItemId": "BFC0002010128633",
+          "ean": "5430004400141",
+          "title": "Olivivo - Badmat - Antislip - 80x50cm - Absorberende Badmat - Douchemat - Toiletmat - Rood",
+          "quantity": 1,
+          "unitPrice": 25.0,
+          "status": "",
+          "fulfilment": "FBB",
+          "latestDelivery": "2026-10-22"
+        }
+      ],
+      "totalAmount": 25.0
+    },
     {
       "orderId": "C000J642WK",
       "orderPlacedDateTime": "2026-10-18T13:20:07+02:00",
